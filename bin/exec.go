@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	//"github.com/litmuschaos/chaos-operator/pkg/apis/litmuschaos/v1alpha1"
+	"github.com/litmuschaos/chaos-operator/pkg/apis/litmuschaos/v1alpha1"
 	//appsv1 "k8s.io/api/apps/v1"
 	//apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,13 +16,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	//"k8s.io/client-go/util/retry"
+	"flag"
 	"os"
 	"strings"
 	"time"
 )
 
 // getKubeConfig setup the config for access cluster resource
-/*func getKubeConfig() (*rest.Config, error) {
+func getKubeConfig() (*rest.Config, error) {
 	kubeconfig := flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	flag.Parse()
 	// Use in-cluster config if kubeconfig path is specified
@@ -38,7 +39,16 @@ import (
 		return config, err
 	}
 	return config, err
-}*/
+}
+func checkStatusListForExp(status []v1alpha1.ExperimentStatuses, jobName string) int {
+	for i := range status {
+		if status[i].Name == jobName {
+			return i
+		}
+	}
+	return -1
+}
+
 var kubeconfig string
 var err error
 var config *rest.Config
@@ -47,15 +57,16 @@ func main() {
 
 	//flag.StringVar(&kubeconfig, "kubeconfig", "", "path to the kubeconfig file")
 	//flag.Parse()
-	if kubeconfig == "" {
-		log.Info("using the in-cluster config")
-		config, err = rest.InClusterConfig()
-	} else {
-		log.Info("using configuration from: ", kubeconfig)
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	}
+	// if kubeconfig == "" {
+	// 	log.Info("using the in-cluster config")
+	// 	config, err = rest.InClusterConfig()
+	// } else {
+	// 	log.Info("using configuration from: ", kubeconfig)
+	// 	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// }
 	//kubeconfig = "/home/rahul/.kube/config"
 	//config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	config, err := getKubeConfig()
 	if err != nil {
 		log.Info("error in config")
 		panic(err.Error())
@@ -71,22 +82,15 @@ func main() {
 	svcAcc := os.Getenv("CHAOS_SVC_ACC")
 	//rand := os.Getenv("RANDOM")
 	//max := os.Getenv("MAX_DURATION")
-	//experimentList = "pod-delete"
 	experiments := strings.Split(experimentList, ",")
-	fmt.Println(experiments)
 	log.Infoln("experiments : ")
 	log.Infoln(experiments)
 	//fmt.Println(config)
-	fmt.Println(engine)
 	log.Infoln("engine name : " + engine)
-	fmt.Println(appLabel)
 	log.Infoln("AppLabel : " + appLabel)
-	fmt.Println(appNamespace)
 	log.Infoln("AppNamespace : " + appNamespace)
 	//appNamespace = "default"
-	fmt.Println(appKind)
 	log.Infoln("AppKind : " + appKind)
-	fmt.Println(svcAcc)
 	log.Infoln("Service Account Name : " + svcAcc)
 	//svcAcc = "nginx"
 
@@ -175,7 +179,7 @@ func main() {
 			log.Infoln(err)
 		}
 
-		clientSet, _, err := goUtils.GenerateClientSets(config)
+		clientSet, litmusClient, err := goUtils.GenerateClientSets(config)
 		jobsClient := clientSet.BatchV1().Jobs(appNamespace)
 		jobCreationResult, err := jobsClient.Create(jobObj)
 		log.Info("Jobcreation", "jobCreation result", jobCreationResult)
@@ -185,15 +189,81 @@ func main() {
 		var jobStatus int32
 		jobStatus = 1
 		for jobStatus == 1 {
+			log.Infoln("---------------------------------------------------------------------------------------------------")
+			expEngine, err := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Get(engine, metav1.GetOptions{})
+			if err != nil {
+				log.Print(err)
+			}
+			log.Info(expEngine)
+			var currExpStatus v1alpha1.ExperimentStatuses
+			currExpStatus.Name = jobName
+			currExpStatus.Status = "Running"
+			currExpStatus.LastUpdateTime = metav1.Now()
+			currExpStatus.Verdict = "Waiting For Completion"
+			checkForjobName := checkStatusListForExp(expEngine.Status.Experiments, jobName)
+			if checkForjobName == -1 {
+				expEngine.Status.Experiments = append(expEngine.Status.Experiments, currExpStatus)
+			} else {
+				expEngine.Status.Experiments[checkForjobName].LastUpdateTime = metav1.Now()
+			}
+			log.Info(expEngine)
+			_, updateErr := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Update(expEngine)
+			if updateErr != nil {
+				log.Info("--------------------------------------------")
+				log.Info(updateErr)
+			}
 			getJob, err := clientSet.BatchV1().Jobs(appNamespace).Get(jobName, metav1.GetOptions{})
 			if err != nil {
 				log.Info("Unable to get the job : ")
 				log.Infoln(err)
 			}
 			jobStatus = getJob.Status.Active
-			log.Info("Watching for Job Name : " + jobName + " status of Job : ")
+			log.Info("Watching for Job Name : "+jobName+" status of Job : ", jobStatus)
 			log.Infoln(jobStatus)
 			time.Sleep(5 * time.Second)
+		}
+		resultName := engine + "-" + experiments[i]
+		log.Info("ResultName : " + resultName)
+		expResult, err := litmusClient.LitmuschaosV1alpha1().ChaosResults(appNamespace).Get(resultName, metav1.GetOptions{})
+		if err != nil {
+			log.Infoln("Unable to get result Resource")
+			log.Panic(err)
+		}
+		verdict := expResult.Spec.ExperimentStatus.Verdict
+		phase := expResult.Spec.ExperimentStatus.Phase
+		expEngine, err := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Get(engine, metav1.GetOptions{})
+		if err != nil {
+			log.Print(err)
+		}
+		log.Info(expEngine)
+		var currExpStatus v1alpha1.ExperimentStatuses
+		currExpStatus.Name = jobName
+		currExpStatus.Status = phase
+		currExpStatus.LastUpdateTime = metav1.Now()
+		currExpStatus.Verdict = verdict
+		checkForjobName := checkStatusListForExp(expEngine.Status.Experiments, jobName)
+		if checkForjobName == -1 {
+			expEngine.Status.Experiments = append(expEngine.Status.Experiments, currExpStatus)
+		} else {
+			expEngine.Status.Experiments[checkForjobName] = currExpStatus
+		}
+		//log.Info("--------------------------------")
+		log.Info(expEngine)
+
+		_, updateErr := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Update(expEngine)
+		if updateErr != nil {
+			log.Info("--------------------------------------------")
+			log.Info(updateErr)
+		}
+
+		if expEngine.Spec.JobCleanUpPolicy == "delete" {
+			log.Infoln("Will delete the job as jobCleanPolicy os set to : " + expEngine.Spec.JobCleanUpPolicy)
+			deleteJob := clientSet.BatchV1().Jobs(appNamespace).Delete(jobName, &metav1.DeleteOptions{})
+
+			if deleteJob != nil {
+				log.Panic(deleteJob)
+			}
+
 		}
 	}
 	//fmt.Println(ans)
