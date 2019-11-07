@@ -9,7 +9,7 @@ import (
 	//"k8s.io/client-go/kubernetes"
 	//"error"
 	//"flag"
-	clientV1alpha1 "github.com/litmuschaos/litmus/pkg/client/clientset/versioned"
+	clientV1alpha1 "github.com/litmuschaos/chaos-operator/pkg/client/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	//"k8s.io/client-go/tools/clientcmd"

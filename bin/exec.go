@@ -4,13 +4,13 @@ import (
 	"github.com/litmuschaos/chaos-operator/pkg/apis/litmuschaos/v1alpha1"
 	//appsv1 "k8s.io/api/apps/v1"
 	//apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	//metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	//"k8s.io/client-go/kubernetes"
 	//"error"
 	//"flag"
-	"github.com/litmuschaos/kube-helper/kubernetes/container"
-	"github.com/litmuschaos/kube-helper/kubernetes/job"
-	"github.com/litmuschaos/kube-helper/kubernetes/podtemplatespec"
+	//"github.com/litmuschaos/kube-helper/kubernetes/container"
+	//"github.com/litmuschaos/kube-helper/kubernetes/job"
+	//"github.com/litmuschaos/kube-helper/kubernetes/podtemplatespec"
 	"github.com/litmuschaos/litmus/utils/goUtils"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +20,7 @@ import (
 	"flag"
 	"os"
 	"strings"
-	"time"
+	//z"time"
 )
 
 // getKubeConfig setup the config for access cluster resource
@@ -55,6 +55,7 @@ var config *rest.Config
 
 func main() {
 
+	var engineDetails goUtils.EngineDetails
 	//flag.StringVar(&kubeconfig, "kubeconfig", "", "path to the kubeconfig file")
 	//flag.Parse()
 	// if kubeconfig == "" {
@@ -71,60 +72,62 @@ func main() {
 		log.Info("error in config")
 		panic(err.Error())
 	}
-
-	//ar s string =
-	//config, err := getKubeConfig()
-	engine := os.Getenv("CHAOSENGINE")
+	engineDetails.Config = config
 	experimentList := os.Getenv("EXPERIMENT_LIST")
-	appLabel := os.Getenv("APP_LABEL")
-	appNamespace := os.Getenv("APP_NAMESPACE")
-	appKind := os.Getenv("APP_KIND")
-	svcAcc := os.Getenv("CHAOS_SVC_ACC")
+
+	//config, err := getKubeConfig()
+	engineDetails.Name = os.Getenv("CHAOSENGINE")
+	engineDetails.AppLabel = os.Getenv("APP_LABEL")
+	engineDetails.AppNamespace = os.Getenv("APP_NAMESPACE")
+	engineDetails.AppKind = os.Getenv("APP_KIND")
+	engineDetails.SvcAccount = os.Getenv("CHAOS_SVC_ACC")
+	engineDetails.Experiments = strings.Split(experimentList, ",")
 	//rand := os.Getenv("RANDOM")
 	//max := os.Getenv("MAX_DURATION")
-	experiments := strings.Split(experimentList, ",")
-	log.Infoln("experiments : ")
-	log.Infoln(experiments)
+	log.Infoln("Experiments List: ", engineDetails.Experiments, " ", "Engine Name: ", engineDetails.Name, " ", "appLabels : ", engineDetails.AppLabel, " ", "appNamespace: ", engineDetails.AppNamespace, " ", "appKind: ", engineDetails.AppKind, " ", "Service Account Name: ", engineDetails.SvcAccount)
+	//log.Infoln("experiments : ")
+	//log.Infoln(experiments)
 	//fmt.Println(config)
-	log.Infoln("engine name : " + engine)
-	log.Infoln("AppLabel : " + appLabel)
-	log.Infoln("AppNamespace : " + appNamespace)
+	//log.Infoln("engine name : " + engine)
+	//log.Infoln("AppLabel : " + appLabel)
+	//log.Infoln("AppNamespace : " + appNamespace)
 	//appNamespace = "default"
-	log.Infoln("AppKind : " + appKind)
-	log.Infoln("Service Account Name : " + svcAcc)
+	//log.Infoln("AppKind : " + appKind)
+	//log.Infoln("Service Account Name : " + svcAcc)
 	//svcAcc = "nginx"
 
-	for i := range experiments {
-		log.Infoln("Now, going with the experiment Name : " + experiments[i])
-		isFound := !goUtils.CheckExperimentInAppNamespace("default", experiments[i], config)
-		log.Info("Is the Experiment Found in " + appNamespace + " : ")
-		log.Infoln(isFound)
+	for i := range engineDetails.Experiments {
+		log.Infoln("Going with the experiment Name : " + engineDetails.Experiments[i])
+		isFound := !goUtils.CheckExperimentInAppNamespace("default", engineDetails.Experiments[i], config)
+		//log.Info("Is the Experiment Found in " + appNamespace + " : ")
+		log.Infoln("Experiment Found Status : ", isFound)
 		if !isFound {
-			log.Infoln("Not Found Experiment Name : " + experiments[i])
-			log.Infoln("breaking the FOR LOOP")
+			log.Infoln("Can't Find Experiment Name : "+engineDetails.Experiments[i], "In Namespace : "+engineDetails.AppNamespace)
+			log.Infoln("Not Executing the Experiment : " + engineDetails.Experiments[i])
 			break
 		}
+		var perExperiment goUtils.ExperimentDetails
+		//perExperiment.EngineDetails = engineDetails
 		log.Infoln("Getting the Default ENV Variables")
-		env := goUtils.GetList(appNamespace, experiments[i], config)
-		log.Info("Printing the Default Variables")
-		log.Infoln(env)
+		perExperiment.Env = goUtils.GetList(engineDetails.AppNamespace, engineDetails.Experiments[i], engineDetails.Config)
+		log.Info("Printing the Default Variables", perExperiment.Env)
 		//mt.Println(k)
-		log.Infoln("OverWriting the Variables")
-		goUtils.OverWriteList(appNamespace, engine, config, env, experiments[i])
+		log.Infoln("OverWriting the Default Variables")
+		goUtils.OverWriteList(engineDetails.AppNamespace, engineDetails.Name, engineDetails.Config, perExperiment.Env, engineDetails.Experiments[i])
 		//env has the ENV variables now
 		log.Infoln("Patching some required ENV's")
-		env["CHAOSENGINE"] = engine
-		env["APP_LABEL"] = appLabel
-		env["APP_NAMESPACE"] = appNamespace
-		env["APP_KIND"] = appKind
+		perExperiment.Env["CHAOSENGINE"] = engineDetails.Name
+		perExperiment.Env["APP_LABEL"] = engineDetails.AppLabel
+		perExperiment.Env["APP_NAMESPACE"] = engineDetails.AppNamespace
+		perExperiment.Env["APP_KIND"] = engineDetails.AppKind
 
 		log.Info("Printing the Over-ridden Variables")
-		log.Infoln(env)
+		log.Infoln(perExperiment.Env)
 
 		//covert env variables to corev1.EnvVars to pass it to builder function
 		log.Infoln("Converting the Variables using A Range loop to convert the map of ENV to corev1.EnvVar to directly send to the Builder Func")
 		var envVar []corev1.EnvVar
-		for k, v := range env {
+		for k, v := range perExperiment.Env {
 			var perEnv corev1.EnvVar
 			perEnv.Name = k
 			perEnv.Value = v
@@ -132,138 +135,39 @@ func main() {
 		}
 		log.Info("Printing the corev1.EnvVar : ")
 		log.Infoln(envVar)
-		log.Infoln("getting all the details of the experiment Name : " + experiments[i])
+		log.Infoln("getting all the details of the experiment Name : " + engineDetails.Experiments[i])
 
-		expLabels, expImage, expArgs := goUtils.GetDetails(appNamespace, experiments[i], config)
-		log.Infoln("Varibles for Job")
-		log.Info("Experiment Labels : ")
-		log.Infoln(expLabels)
-		log.Info("Experiment Image : ")
-		log.Infoln(expImage)
-		log.Info("Experiment args : ")
-		log.Infoln(expArgs)
+		perExperiment.ExpLabels, perExperiment.ExpImage, perExperiment.ExpArgs = goUtils.GetDetails(engineDetails.AppNamespace, engineDetails.Experiments[i], engineDetails.Config)
+
+		log.Infoln("Variables for ChaosJob : ", "Experiment Labels : ", perExperiment.ExpLabels, " Experiment Image : ", perExperiment.ExpImage, " Experiment Args : ", perExperiment.ExpArgs)
 
 		//command := prependString(expArgs, "/bin/bash")
 		//randon string generation
 		randomString := goUtils.RandomString()
 
-		jobName := experiments[i] + "-" + randomString
+		perExperiment.JobName = engineDetails.Experiments[i] + "-" + randomString
 
-		log.Infoln("Printing the JobName with Random String : " + jobName)
-		podtemplate := podtemplatespec.NewBuilder().
-			WithName(jobName).
-			WithNamespace(appNamespace).
-			WithLabels(expLabels).
-			WithServiceAccountName(svcAcc).
-			WithContainerBuilders(
-				container.NewBuilder().
-					WithName(jobName).
-					WithImage(expImage).
-					WithCommandNew([]string{"/bin/bash"}).
-					WithArgumentsNew(expArgs).
-					WithImagePullPolicy("Always").
-					WithEnvsNew(envVar),
-			)
-		restartPolicy := corev1.RestartPolicyOnFailure
-		log.Infoln("Job Creation")
-		jobObj, err := job.NewBuilder().
-			WithName(jobName).
-			WithNamespace("default").
-			WithLabels(expLabels).
-			WithPodTemplateSpecBuilder(podtemplate).
-			WithRestartPolicy(restartPolicy).
-			Build()
-
+		log.Infoln("JobName for this Experiment : " + perExperiment.JobName)
+		err = goUtils.DeployJob(perExperiment, engineDetails, envVar)
 		if err != nil {
-			log.Info("Error while building Job : ")
-			log.Infoln(err)
+			log.Infoln("Error while building Job : ", err)
 		}
-
-		clientSet, litmusClient, err := goUtils.GenerateClientSets(config)
-		jobsClient := clientSet.BatchV1().Jobs(appNamespace)
-		jobCreationResult, err := jobsClient.Create(jobObj)
-		log.Info("Jobcreation", "jobCreation result", jobCreationResult)
+		var clients goUtils.ClientSets
+		clients.KubeClient, clients.LitmusClient, err = goUtils.GenerateClientSets(engineDetails.Config)
 		if err != nil {
-			log.Info(err)
+			log.Info("Unable to generate ClientSet while Creating Job")
+			log.Fatal("Unable to create Client Set : ", err)
 		}
-		var jobStatus int32
-		jobStatus = 1
-		for jobStatus == 1 {
-			log.Infoln("---------------------------------------------------------------------------------------------------")
-			expEngine, err := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Get(engine, metav1.GetOptions{})
-			if err != nil {
-				log.Print(err)
-			}
-			log.Info(expEngine)
-			var currExpStatus v1alpha1.ExperimentStatuses
-			currExpStatus.Name = jobName
-			currExpStatus.Status = "Running"
-			currExpStatus.LastUpdateTime = metav1.Now()
-			currExpStatus.Verdict = "Waiting For Completion"
-			checkForjobName := checkStatusListForExp(expEngine.Status.Experiments, jobName)
-			if checkForjobName == -1 {
-				expEngine.Status.Experiments = append(expEngine.Status.Experiments, currExpStatus)
-			} else {
-				expEngine.Status.Experiments[checkForjobName].LastUpdateTime = metav1.Now()
-			}
-			log.Info(expEngine)
-			_, updateErr := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Update(expEngine)
-			if updateErr != nil {
-				log.Info("--------------------------------------------")
-				log.Info(updateErr)
-			}
-			getJob, err := clientSet.BatchV1().Jobs(appNamespace).Get(jobName, metav1.GetOptions{})
-			if err != nil {
-				log.Info("Unable to get the job : ")
-				log.Infoln(err)
-			}
-			jobStatus = getJob.Status.Active
-			log.Info("Watching for Job Name : "+jobName+" status of Job : ", jobStatus)
-			log.Infoln(jobStatus)
-			time.Sleep(5 * time.Second)
-		}
-		resultName := engine + "-" + experiments[i]
-		log.Info("ResultName : " + resultName)
-		expResult, err := litmusClient.LitmuschaosV1alpha1().ChaosResults(appNamespace).Get(resultName, metav1.GetOptions{})
+		resultName := goUtils.GetResultName(engineDetails, i)
+		err = goUtils.WatchingJobtillCompletion(perExperiment, engineDetails, clients)
 		if err != nil {
-			log.Infoln("Unable to get result Resource")
-			log.Panic(err)
+			log.Info("Unable to Watch the Job")
+			log.Error(err)
 		}
-		verdict := expResult.Spec.ExperimentStatus.Verdict
-		phase := expResult.Spec.ExperimentStatus.Phase
-		expEngine, err := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Get(engine, metav1.GetOptions{})
+		err = goUtils.UpdateResultWithJobAndDeletingJob(engineDetails, clients, resultName, perExperiment)
 		if err != nil {
-			log.Print(err)
-		}
-		log.Info(expEngine)
-		var currExpStatus v1alpha1.ExperimentStatuses
-		currExpStatus.Name = jobName
-		currExpStatus.Status = phase
-		currExpStatus.LastUpdateTime = metav1.Now()
-		currExpStatus.Verdict = verdict
-		checkForjobName := checkStatusListForExp(expEngine.Status.Experiments, jobName)
-		if checkForjobName == -1 {
-			expEngine.Status.Experiments = append(expEngine.Status.Experiments, currExpStatus)
-		} else {
-			expEngine.Status.Experiments[checkForjobName] = currExpStatus
-		}
-		//log.Info("--------------------------------")
-		log.Info(expEngine)
-
-		_, updateErr := litmusClient.LitmuschaosV1alpha1().ChaosEngines(appNamespace).Update(expEngine)
-		if updateErr != nil {
-			log.Info("--------------------------------------------")
-			log.Info(updateErr)
-		}
-
-		if expEngine.Spec.JobCleanUpPolicy == "delete" {
-			log.Infoln("Will delete the job as jobCleanPolicy os set to : " + expEngine.Spec.JobCleanUpPolicy)
-			deleteJob := clientSet.BatchV1().Jobs(appNamespace).Delete(jobName, &metav1.DeleteOptions{})
-
-			if deleteJob != nil {
-				log.Panic(deleteJob)
-			}
-
+			log.Info("Unable to Update Resource")
+			log.Error(err)
 		}
 	}
 	//fmt.Println(ans)

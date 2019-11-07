@@ -51,7 +51,7 @@
       name: engine-nginx
       namespace: default
     spec:
-      monitorenable: true 
+      monitoring: true 
       appinfo:
         appkind: deployment
         applabel: app=nginx
